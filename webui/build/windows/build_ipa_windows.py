@@ -27,8 +27,35 @@ METAL = ''
 JOBS = 12
 
 
+def shader_split_command(python, repo, extracted, shader, tables, names):
+    # The scanner opens every descendant; a normal short root can still produce
+    # paths over MAX_PATH. Keep the prefix inside this Python subprocess only.
+    from webui.file_tools import filesystem_path
+    return [python, repo / 'dm/gfx/tools/shader_split.py', filesystem_path(extracted / 'RomFS'),
+            filesystem_path(extracted / 'ExeFS/main'), filesystem_path(shader / 'packages'),
+            *[filesystem_path(tables / name) for name in names]]
+
+
+def check_shader_split_log(log):
+    # shader_split reports unreadable files but exits successfully; never accept
+    # incomplete evidence, including for a provisional profile.
+    with open(log, encoding='utf-8', errors='replace') as stream:
+        for line in stream:
+            if re.match(r'^\[RED\] \d+ file\(s\) could not be read,', line):
+                raise RuntimeError(f'shader_split left files unreadable: {line.strip()} See {log}')
+
+
+def resolve_dotnet(tools):
+    from webui.platform_tools import find_dotnet
+    binary = find_dotnet({'tools': str(tools)})
+    if not binary:
+        raise RuntimeError('A .NET 10 SDK and runtime are required. Install them in Environment & tools, then retry.')
+    return Path(binary)
+
+
 def main():
     repo = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(repo))
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('folder', nargs='?', default=NSP_DIR)
     ap.add_argument('--game', default=GAME)
@@ -53,6 +80,7 @@ def main():
     folder, tools = Path(a.folder).resolve(), a.tools.resolve()
     a.metal = a.metal or Path(os.environ.get('METAL_EXE') or tools / 'metal/metal.exe')
     if not a.metal.is_file(): ap.error('Supply --metal with your installed Metal compiler')
+    dotnet = resolve_dotnet(tools)
     sys.path.insert(0, str(repo / 'dm/games'))
     import game
     nsps = sorted(folder.rglob('*.nsp'))
@@ -84,11 +112,11 @@ def main():
     profile = build / 'profile' / original.id
     shutil.copytree(original.dir, profile, dirs_exist_ok=True)
     g = game.Game(profile)
-    env = dict(os.environ, DOTNET_ROOT=str(tools / 'dotnet'), PYTHONUTF8='1', PYTHONPATH=str(tools / 'python-packages'),
+    env = dict(os.environ, DOTNET_ROOT=str(dotnet.parent), PYTHONUTF8='1', PYTHONPATH=str(tools / 'python-packages'),
                DM_GAME=str(profile), DM_ROOT=str(build), DM_RULESET='native',
                J=str(a.jobs), TEMP=str(temporary), TMP=str(temporary),
-               DOTNET_CLI_HOME=str(tools / '.dotnet'))
-    env['PATH'] = str(tools / 'dotnet') + os.pathsep + env.get('PATH', '')
+               DOTNET_CLI_HOME=str(tools / '.dotnet'), NUGET_PACKAGES=str(tools / 'nuget'))
+    env['PATH'] = str(dotnet.parent) + os.pathsep + env.get('PATH', '')
     python = sys.executable
     started = time.monotonic()
     def count_files(root, suffix):
@@ -181,8 +209,8 @@ def main():
                     hashlib.sha256((shader / name).read_bytes()).hexdigest() == digest
                     for name, digest in saved.get('files', {}).items()))
     if not reusable:
-        run('shader_split', [python, repo / 'dm/gfx/tools/shader_split.py', extracted / 'RomFS', extracted / 'ExeFS/main',
-                             shader / 'packages', *[tables / name for name in names]])
+        run('shader_split', shader_split_command(python, repo, extracted, shader, tables, names))
+        check_shader_split_log(logs / 'shader_split.log')
     def rows(p):
         return [line for line in p.read_bytes().splitlines() if not line.startswith(b'#')]
     if a.provisional:
@@ -208,7 +236,7 @@ def main():
     run('windows_shaders', [python, repo / 'webui/build/windows/windows_shader_build.py', '--profile', profile,
                             '--packages', shader / 'packages', '--out', windows, '--metal', a.metal.resolve(),
                             '--spirv-cross', tools / 'spirv-cross-build/spirv-cross.exe',
-                            '--dotnet', tools / 'dotnet/dotnet.exe', '--cache-dir', tools / 'shader-cache', '--jobs', a.jobs],
+                            '--dotnet', dotnet, '--cache-dir', tools / 'shader-cache', '--jobs', a.jobs],
         progress=shader_progress)
     chain = re.search(r'#define DMSH_CHAIN "([a-f0-9]+)"', g.table('dmsh_chain.h').read_text())[1]
     run('c1_guard', [python, repo / 'dm/gfx/tools/c1_guard.py', windows / ('mac/b-' + chain), g.table('c1_full.tsv')])

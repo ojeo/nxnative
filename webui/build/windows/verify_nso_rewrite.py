@@ -36,12 +36,19 @@ def verify(nso, patched, name):
     patch_offset = int(headers['PATCH_OFF'], 0)
     patch_file = int(headers.get('FILE_IMAGE_LEN', headers['PATCH_OFF']), 0)
     patch_length = len(image) - patch_file
-    points, windows, spin_edges = {}, [], []
+    points, windows, retries, spin_edges = {}, [], [], []
     for line in (patched / f'{name}.sites.tsv').read_text().splitlines():
         columns = line.split('\t')
         address = int(columns[0], 0)
         if columns[1] == 'W':
             windows.append((address, int(columns[2], 0)))
+        elif columns[1] == 'R':
+            if len(columns) != 3:
+                raise ValueError(f'{name}: invalid retry block at {address:#x}')
+            end = int(columns[2], 0)
+            if address % 4 or end % 4 or not 0 <= address < end <= len(original):
+                raise ValueError(f'{name}: invalid retry block at {address:#x}')
+            retries.append((address, end))
         elif columns[1] == 'S':
             # The head stays original; only the back-edges branch into the copied region.
             spin_edges.extend(int(item, 0) for column in columns[2:] for item in column.split())
@@ -74,10 +81,10 @@ def verify(nso, patched, name):
         if kind:
             expected[address] = kind
     uncovered = [hex(a) for a, kind in expected.items()
-                 if points.get(a) != kind and not any(lo <= a < hi for lo, hi in windows)]
+                 if points.get(a) != kind and not any(lo <= a < hi for lo, hi in windows + retries)]
     if uncovered:
         raise ValueError(f'{name}: uncovered sites: {uncovered[:20]}')
-    for address in sorted(set(points) | {lo for lo, _ in windows} | set(spin_edges)):
+    for address in sorted(set(points) | {lo for lo, _ in windows + retries} | set(spin_edges)):
         word = struct.unpack_from('<I', image, address)[0]
         if points.get(address) == 'ctr':
             register = struct.unpack_from('<I', original, address)[0] & 31
@@ -93,7 +100,7 @@ def verify(nso, patched, name):
         if not patch_offset <= target < patch_offset + patch_length:
             raise ValueError(f'{name}: branch leaves patch area at {address:#x}')
     return {'module': name, 'build_id': build, 'expected_sites': dict(Counter(expected.values())),
-            'table_points': len(points), 'exclusive_windows': len(windows),
+            'table_points': len(points), 'exclusive_windows': len(windows), 'retry_blocks': len(retries),
             'uncovered_sites': 0, 'branch_targets_within_patch': True,
             'patched_bytes': len(image)}
 

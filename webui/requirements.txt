@@ -5,3 +5,4 @@ capstone
 fonttools
 Pillow
 nsz==5.0.0
+backports.zstd; python_version < '3.14'

@@ -1,13 +1,22 @@
-diff --git a/dm/gfx/tools/shader_split.py b/dm/gfx/tools/shader_split.py
-index 19a776e..5eb557d 100644
 --- a/dm/gfx/tools/shader_split.py
 +++ b/dm/gfx/tools/shader_split.py
-@@ -2250,7 +2250,7 @@ def main():
-     files, results, common = [], [], None
-     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
+@@ -1835,3 +1835,3 @@
+     a SARC (itself plain zstd) of *.zsdic files, each a zstd dictionary (magic 0xEC30A437, then its ID). → {ID: dictionary}; {} without that file (Mario's .zs are plain zstd)"""
+-    p = os.path.join(romfs, 'Pack/ZsDic.pack.zs')
++    p = os.path.join(romfs, 'Pack', 'ZsDic.pack.zs')
+     if not os.path.exists(p): return {}
+@@ -1854,7 +1854,6 @@
+ def unzs(path):
+-    """A zstd file decompressed: frames without a dictionary through the zstd command as before (fed the bytes: inside a RomFS image the path is not a file the command can open),
+-    frames that name one with that dictionary from ZDICTS"""
++    """Decompress a zstd file using Python, with a game dictionary when named."""
+     d = open(path, 'rb').read()
+     did = zs_dict_id(d)
+-    if not did: return subprocess.run(['zstd', '-d', '-c', '-q'], input=d, capture_output=True, check=True).stdout
++    if not did: return zstd_mod().decompress(d)
+     return unzs_dict(d, did, path)
+@@ -2252,3 +2251,3 @@
          tag = os.path.basename(os.path.dirname(os.path.abspath(romfs))) if i else ''
 -        files += sorted((os.path.join(dp, f), (tag + '/' if tag else '') + os.path.relpath(os.path.join(dp, f), romfs)) for dp, _, fs in os.walk(romfs) for f in fs)
 +        files += sorted(((os.path.join(dp, f), (tag + '/' if tag else '') + os.path.relpath(os.path.join(dp, f), romfs).replace(os.sep, '/')) for dp, _, fs in os.walk(romfs) for f in fs), key=lambda item: item[1])
          img = nso_image(mainnso)
-         if not i:
-             import unityfs

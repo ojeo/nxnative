@@ -18,7 +18,16 @@ class Startup(unittest.TestCase):
         with patch.object(bootstrap.importlib.metadata, 'version', side_effect=version), patch.object(bootstrap.importlib, 'import_module'):
             self.assertEqual(bootstrap.missing_dependencies(), ['fastapi', 'uvicorn'])
         with patch.object(bootstrap.importlib.metadata, 'version', return_value='0.200.0'), patch.object(bootstrap.importlib, 'import_module', side_effect=ImportError):
-            self.assertEqual(bootstrap.missing_dependencies(), list(bootstrap.PACKAGES))
+            self.assertEqual(bootstrap.missing_dependencies(), list(bootstrap.PACKAGES) + ['backports.zstd'])
+
+    def test_zstd_accepts_builtin_or_backport_and_reports_missing(self):
+        for available, expected in [('compression.zstd', []), ('backports.zstd', []), (None, ['backports.zstd'])]:
+            def import_module(name):
+                if name in ('compression.zstd', 'backports.zstd') and name != available:
+                    raise ImportError(name)
+                return Mock()
+            with self.subTest(available=available), patch.object(bootstrap.importlib.metadata, 'version', return_value='0.115.0'), patch.object(bootstrap.importlib, 'import_module', side_effect=import_module):
+                self.assertEqual(bootstrap.missing_dependencies(), expected)
 
     def test_missing_creates_environment_installs_checks_and_launches(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -5,3 +5,4 @@ lz4
 capstone
 fonttools
 Pillow
+backports.zstd; python_version < '3.14'

@@ -12,6 +12,43 @@ BUILD_ID = '00112233445566778899aabbccddeeff'
 
 
 class VerifyRewrite(unittest.TestCase):
+    def test_retry_block_coverage_and_entry_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exefs, patched = root / 'ExeFS', root / 'patched'
+            exefs.mkdir(); patched.mkdir()
+            nso = bytearray(0x10c)
+            struct.pack_into('<III', nso, 0x10, 0x100, 0, 12)
+            struct.pack_into('<I', nso, 0x60, 12)
+            nso[0x40:0x50] = bytes.fromhex(BUILD_ID)
+            # ldxr w18, [x10]; cmp w16, w18; b.eq
+            nso[0x100:] = bytes.fromhex('527d5f881f02126ba0e2ff54')
+            (exefs / 'main').write_bytes(nso)
+            image = bytearray(0x30)
+            struct.pack_into('<I', image, 0, 0x14000008)  # b 0x20
+            (patched / 'main.patched.bin').write_bytes(image)
+            (patched / 'main.fixups.tsv').write_text(f'# PATCH_OFF\t0x20\n# BUILD_ID\t{BUILD_ID}\n', encoding='utf-8')
+            sites = patched / 'main.sites.tsv'
+
+            sites.write_text('0x0\tR\t0xc\n', encoding='utf-8')
+            self.assertEqual(verifier.verify(exefs / 'main', patched, 'main')['retry_blocks'], 1)
+            sites.write_text('', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'uncovered sites'):
+                verifier.verify(exefs / 'main', patched, 'main')
+            for bad in ('0x0\tR\t0x10\n', '0x0\tR\t0x0\n', '0x2\tR\t0xc\n'):
+                sites.write_text(bad, encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'invalid retry block'):
+                    verifier.verify(exefs / 'main', patched, 'main')
+            sites.write_text('0x0\tR\t0xc\n', encoding='utf-8')
+            struct.pack_into('<I', image, 0, 0xd503201f)  # nop
+            (patched / 'main.patched.bin').write_bytes(image)
+            with self.assertRaisesRegex(ValueError, 'no branch'):
+                verifier.verify(exefs / 'main', patched, 'main')
+            struct.pack_into('<I', image, 0, 0x14000004)  # b 0x10, outside patch
+            (patched / 'main.patched.bin').write_bytes(image)
+            with self.assertRaisesRegex(ValueError, 'branch leaves patch area'):
+                verifier.verify(exefs / 'main', patched, 'main')
+
     def test_spin_edges_are_checked_instead_of_the_unchanged_head(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

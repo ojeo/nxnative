@@ -40,6 +40,25 @@ def local_link(source, destination):
         shutil.copy2(source, destination)
 
 
+def retry_inputs(folder, task):
+    """Find the nearest retry ancestor holding inputs for these same files."""
+    identity = task.get('retry_of', '')
+    seen = set()
+    while len(identity) == 32 and all(c in '0123456789abcdef' for c in identity) and identity not in seen:
+        seen.add(identity)
+        previous = folder.parent / identity
+        try:
+            previous_task = json.loads((previous / 'task.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            break
+        if previous_task.get('files') != task.get('files'):
+            break
+        if (previous / 'inputs').is_dir():
+            return previous / 'inputs'
+        identity = previous_task.get('retry_of', '')
+    return folder / 'inputs'
+
+
 def zip_app(folder, app, output, env):
     """Archive the Mac app folder as <title>.app.zip (ditto keeps symlinks, signatures and attributes)."""
     if not app.is_dir():
@@ -185,13 +204,7 @@ def execute(folder):
                 raise ValueError(profile['reason'] or 'Target unavailable on this host.')
         g = game.load(title)
         graphics = profile['graphics']
-    inputs = folder / 'inputs'
-    retry = task.get('retry_of', '')
-    if len(retry) == 32 and all(c in '0123456789abcdef' for c in retry):
-        previous = folder.parent / retry
-        previous_task = json.loads((previous / 'task.json').read_text(encoding='utf-8'))
-        if previous_task['files'] == task['files'] and (previous / 'inputs').is_dir():
-            inputs = previous / 'inputs'
+    inputs = retry_inputs(folder, task)
     inputs.mkdir(exist_ok=True)
     selected = []
     for path, item in records:

@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -7,6 +8,8 @@ import zipfile
 
 from webui.build.romfs_archive import (archive_path, discard_archive, pack_command, prepare_archive,
                                        verify_archive, verify_no_romfs)
+from webui.build.windows.ios_cross_pack import bundle_files
+from webui.file_tools import filesystem_path
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -47,7 +50,7 @@ class RomfsArchiveTests(unittest.TestCase):
             image.write_bytes(b'image bytes')
             archive = root / 'Game.romfs.zip'
             command = pack_command(sys.executable, REPO / 'dm/ios/tools/pack_ipa.py', archive, image, '')
-            self.assertEqual(command[-1], f'romfs.img={image}')
+            self.assertEqual(command[-1], f'romfs.img={filesystem_path(image)}')
             subprocess.run(command, check=True, capture_output=True)
             verify_archive(archive, 'System/Resource')
             with zipfile.ZipFile(archive) as value:
@@ -74,6 +77,33 @@ class RomfsArchiveTests(unittest.TestCase):
             (romfs / 'System' / 'Resource').write_bytes(b'marker')
             with self.assertRaises(OSError):
                 prepare_archive(root / 'c.romfs.zip', romfs, 'System/Resource', margin=10**18)
+
+    def test_long_paths_in_both_separate_and_bundled_packaging(self):
+        root = Path(tempfile.mkdtemp())
+        try:
+            romfs = root / 'RomFS'
+            (romfs / 'Pack').mkdir(parents=True)
+            (romfs / 'Pack' / 'ZsDic.pack.zs').write_bytes(b'marker')
+            nested = romfs / ('a' * 120) / ('b' * 120)
+            filesystem_path(nested).mkdir(parents=True)
+            content = filesystem_path(nested / 'long-file.bin')
+            content.write_bytes(b'long path contents')
+            self.assertGreater(len(str(nested / 'long-file.bin')), 260)
+            expected = 'romfs/' + ('a' * 120) + '/' + ('b' * 120) + '/long-file.bin'
+            entries = bundle_files(romfs, 'romfs')
+            source = next(p for p, name in entries if name == expected)
+            self.assertEqual(source.read_bytes(), b'long path contents')
+            info = zipfile.ZipInfo.from_file(source, 'Payload/DmIOS.app/' + expected)
+            self.assertEqual(info.filename, 'Payload/DmIOS.app/' + expected)
+            archive = root / 'long.romfs.zip'
+            self.assertEqual(prepare_archive(archive, romfs, 'Pack/ZsDic.pack.zs', margin=0), len(b'marker') + len(b'long path contents'))
+            subprocess.run(pack_command(sys.executable, REPO / 'dm/ios/tools/pack_ipa.py',
+                                        archive, romfs, ''), check=True, capture_output=True)
+            verify_archive(archive, 'Pack/ZsDic.pack.zs')
+            with zipfile.ZipFile(archive) as z:
+                self.assertEqual(z.read(expected), b'long path contents')
+        finally:
+            shutil.rmtree(filesystem_path(root))
 
     def test_ipa_romfs_detection(self):
         with tempfile.TemporaryDirectory() as folder:

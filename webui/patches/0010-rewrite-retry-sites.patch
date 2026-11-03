@@ -1,0 +1,13 @@
+--- a/dm/tools/patch_nso.py
++++ b/dm/tools/patch_nso.py
+@@ -1489,6 +1489,10 @@
+     for a in sorted(kinds):
+         if a not in done: f.write(f'{a:#x}\t{kinds[a][0]}\n')
+     for wseg in windows: f.write(f'{wseg[0].address:#x}\tW\t{wseg[-1].address + 4:#x}\n')
++    # Record retry block sites for rewrite verification; the second part is already a W window.
++    for parts in retries:
++        seg = parts[0][0]
++        f.write(f'{seg[0].address:#x}\tR\t{seg[-1].address + 4:#x}\n')
+     for a, (b, c) in jumps.items(): f.write(f'{a:#x}\tJ\t{b:#x}\t{c}\n')
+     for a, tgt in tabjumps.items(): f.write(f'{a:#x}\tT\t' + ' '.join(f'{t:#x}' for t in tgt) + '\n')   # offset-table jump and all its targets
+     for t, bes, n in spin_sites: f.write(f'{t:#x}\tS\t' + ' '.join(f'{b:#x}' for b in bes) + '\n')   # spin wait: its head and the back-edges that enter its copy

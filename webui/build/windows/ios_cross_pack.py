@@ -13,6 +13,15 @@ import sys
 import zipfile
 
 
+def bundle_files(root, prefix, shader=False):
+    """Enumerate bundle inputs using Windows long paths without changing ZIP names."""
+    from webui.file_tools import filesystem_path
+    source_root = filesystem_path(root)
+    return [(p, '/'.join(x for x in (prefix, p.relative_to(source_root).as_posix()) if x))
+            for p in sorted(source_root.rglob('*')) if p.is_file() and
+            (not shader or re.fullmatch(r'[0-9a-f]{16}_bf?\.(metallib|json)', p.name))]
+
+
 def base_info_plist(*, game_id, display_name, app_version, app_category):
     """Return the bundle Info.plist shared by the Windows IPA packer.
 
@@ -71,6 +80,8 @@ def main():
     ap.add_argument('--experimental', action='store_true', help='Mark runtime features as experimental even when all shaders are present')
     a = ap.parse_args()
     repo = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(repo))
+    from webui.file_tools import filesystem_path
     sys.path.insert(0, str(repo / 'dm/games'))
     import game
     try:
@@ -156,14 +167,12 @@ def main():
         raise ValueError('Executable differs from its verified link report')
     if chain.encode() + b'\0' not in executable_bytes:
         raise ValueError('Executable was not rebuilt with the current shader chain')
-    if not (a.romfs / g.get('romfs_marker')).is_file():
+    if not (filesystem_path(a.romfs) / g.get('romfs_marker')).is_file():
         raise ValueError('Missing game RomFS marker')
     files = [(executable, 'DmIOS')]
     for root, prefix in ((stage, ''), (None if a.omit_romfs else a.romfs, 'romfs'), (shader_dir, 'msl/b-' + chain), (a.aoc, 'aoc')):
         if root:
-            files += [(p, '/'.join(x for x in (prefix, p.relative_to(root).as_posix()) if x))
-                      for p in sorted(root.rglob('*')) if p.is_file() and
-                      (root != shader_dir or re.fullmatch(r'[0-9a-f]{16}_bf?\.(metallib|json)', p.name))]
+            files += bundle_files(root, prefix, shader=(root == shader_dir))
     names = [n for _, n in files]
     if len(set(names)) != len(names):
         raise ValueError('Duplicate bundle path')

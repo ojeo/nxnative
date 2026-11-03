@@ -26,6 +26,14 @@ def missing_dependencies():
                     missing.append(package)
         except (ImportError, OSError, importlib.metadata.PackageNotFoundError):
             missing.append(package)
+    for module in ('compression.zstd', 'backports.zstd'):
+        try:
+            importlib.import_module(module)
+            break
+        except (ImportError, OSError):
+            continue
+    else:
+        missing.append('backports.zstd')
     return missing
 
 def ensure_dependencies(root, repo, index_url=DEFAULT_INDEX):

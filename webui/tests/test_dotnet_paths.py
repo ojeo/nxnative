@@ -8,10 +8,22 @@ from unittest.mock import Mock, patch
 import zipfile
 
 from webui import dependencies as deps
+from webui.build.windows.build_ipa_windows import resolve_dotnet
 from webui.file_tools import filesystem_path, remove_stage
 
 
 class DotnetPathAndRetry(unittest.TestCase):
+    def test_windows_build_uses_detected_system_dotnet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tools = Path(directory) / 'tools'
+            system = Path(directory) / 'system' / 'dotnet.exe'
+            with patch('webui.platform_tools.find_dotnet', return_value=str(system)) as find:
+                self.assertEqual(resolve_dotnet(tools), system)
+                find.assert_called_once_with({'tools': str(tools)})
+            with patch('webui.platform_tools.find_dotnet', return_value=''):
+                with self.assertRaisesRegex(RuntimeError, '.NET 10 SDK and runtime'):
+                    resolve_dotnet(tools)
+
     def test_extracts_real_failure_member_beyond_windows_max_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); archive=root/'dotnet.zip'

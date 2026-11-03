@@ -14,6 +14,8 @@ from pathlib import Path
 import shutil
 import zipfile
 
+from webui.file_tools import filesystem_path
+
 DEFAULT_MARGIN = 512 * 1024 * 1024
 APP_ROMFS_PREFIX = 'Payload/DmIOS.app/romfs'
 APP_ROMFS_IMAGE = APP_ROMFS_PREFIX + '.img'
@@ -51,7 +53,7 @@ def discard_archive(archive: Path):
 
 def prepare_archive(archive: Path, romfs: Path, marker: str, margin: int = DEFAULT_MARGIN) -> int:
     """Validate the source, clear stale output and check free space; return source bytes."""
-    archive, romfs = Path(archive), Path(romfs)
+    archive, romfs = Path(archive), filesystem_path(romfs)
     name = _marker_name(marker)
     if not (romfs / name).is_file():
         raise ValueError(f'RomFS marker is missing: {romfs / name}')
@@ -72,8 +74,9 @@ def prepare_archive(archive: Path, romfs: Path, marker: str, margin: int = DEFAU
 
 def pack_command(python, pack_ipa: Path, archive: Path, romfs: Path, store: str):
     """Command for the upstream packer; the mapping keeps the top-level romfs/ folder, or romfs.img for an image."""
-    entry = IMAGE_ENTRY if is_image(romfs) else 'romfs'
-    return [str(python), str(pack_ipa), str(archive), '--store', str(store or ''), f'{entry}={romfs}']
+    source = filesystem_path(romfs)
+    entry = IMAGE_ENTRY if is_image(source) else 'romfs'
+    return [str(python), str(pack_ipa), str(archive), '--store', str(store or ''), f'{entry}={source}']
 
 
 def verify_archive(archive: Path, marker: str):

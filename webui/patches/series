@@ -10,3 +10,4 @@
 0007-launcher-ui-language-model.patch dm/ios/Sources/LauncherSettings.swift
 0008-launcher-ui-language-picker.patch dm/ios/Sources/Launcher.swift
 0009-launcher-ui-language-rows.patch dm/ios/Sources/LauncherRow.swift
+0010-rewrite-retry-sites.patch dm/tools/patch_nso.py

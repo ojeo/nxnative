@@ -16,7 +16,7 @@ from argparse import Namespace
 from webui import staging
 
 REPO = Path(__file__).resolve().parents[2]
-PATCHED_PYTHON = ('dm/gfx/tools/shader_split.py', 'dm/ios/tools/gen_embed.py', 'scripts/build_ipa_from_nsp.py')
+PATCHED_PYTHON = ('dm/gfx/tools/shader_split.py', 'dm/ios/tools/gen_embed.py', 'scripts/build_ipa_from_nsp.py', 'dm/tools/patch_nso.py')
 
 
 class PatchedScripts(unittest.TestCase):
@@ -38,6 +38,27 @@ class PatchedScripts(unittest.TestCase):
             with self.subTest(name):
                 path = self.tree / name
                 compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+
+    def test_shader_split_reads_zstd_without_external_command(self):
+        process = self.python(
+            "import os, sys, tempfile\n"
+            "from pathlib import Path\n"
+            "os.environ['DM_GAME'] = '010015100B514000'\n"
+            "sys.path.insert(0, 'dm/gfx/tools')\n"
+            "import shader_split as s\n"
+            "z = s.zstd_mod()\n"
+            "with tempfile.TemporaryDirectory() as tmp:\n"
+            "    root = Path(tmp)\n"
+            "    if os.name == 'nt': root = Path('\\\\\\\\?\\\\' + str(root))\n"
+            "    (root / 'Pack').mkdir()\n"
+            "    (root / 'Pack' / 'ZsDic.pack.zs').write_bytes(z.compress(b'dictionary archive'))\n"
+            "    s.sarc_members = lambda data: [('dict', bytes.fromhex('37a430ec01000000'))]\n"
+            "    assert sorted(s.zs_dicts(str(root))) == [1]\n"
+            "    f = root / 'plain.zs'\n"
+            "    options = {z.CompressionParameter.content_size_flag: 0}\n"
+            "    f.write_bytes(z.compress(b'first', options=options) + z.compress(b'second'))\n"
+            "    assert s.unzs(str(f)) == b'firstsecond'\n")
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 
     @unittest.skipUnless(shutil.which('bash'), 'bash is required')
     def test_patched_shell_parses(self):

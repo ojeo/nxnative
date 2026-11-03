@@ -15,6 +15,7 @@ MARKERS = {
     '0007-launcher-ui-language-model.patch': ['launcher.uiLanguage', 'func text'],
     '0008-launcher-ui-language-picker.patch': ['Interface language', '$m.uiLanguage'],
     '0009-launcher-ui-language-rows.patch': ['m.text(s.label)', 'm.text($0[1])'],
+    '0010-rewrite-retry-sites.patch': ['retry block sites for rewrite verification'],
 }
 
 
